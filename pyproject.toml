@@ -1,31 +1,35 @@
 [project]
 name = "corebank-ledger"
 version = "0.1.0"
-description = "Educational double-entry ledger service demonstrating financial transaction integrity."
+description = "Educational double-entry ledger service demonstrating financial transaction integrity, idempotency and reconciliation."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
 authors = [{ name = "Adetlo" }]
-keywords = ["ledger", "double-entry", "fintech", "banking", "postgresql"]
+keywords = ["ledger", "double-entry", "fintech", "banking", "fastapi", "postgresql"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.12",
   "Topic :: Office/Business :: Financial :: Accounting",
 ]
 dependencies = [
-  "pydantic>=2.5",
-  "pydantic-settings>=2.1",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
   "sqlalchemy>=2.0.25",
   "psycopg[binary]>=3.1",
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=7.4",
-  "ruff>=0.2",
-  "mypy>=1.8",
+  "pytest>=8.0",
+  "ruff>=0.4",
+  "mypy>=1.10",
 ]
 
 [build-system]
