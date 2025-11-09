@@ -1,0 +1,38 @@
+name: corebank-ledger
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # Local development credentials only; obviously synthetic.
+      POSTGRES_USER: corebank
+      POSTGRES_PASSWORD: corebank_dev_only
+      POSTGRES_DB: corebank
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corebank -d corebank"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://corebank:corebank_dev_only@postgres:5432/corebank
+      APP_ENV: development
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
