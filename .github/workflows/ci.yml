@@ -69,3 +69,63 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  security:
+    name: Dependency and code security audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: pip-audit (known vulnerabilities in resolved dependencies)
+        run: |
+          uv export --no-emit-project --no-hashes --format requirements-txt -o requirements-audit.txt
+          uv run pip-audit -r requirements-audit.txt --strict --desc on
+
+      - name: Bandit (static security analysis)
+        run: uv run bandit -c pyproject.toml -r src -q
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: corebank-ledger:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image
+        run: |
+          docker network create ci-net
+          docker run -d --name pg --network ci-net \
+            -e POSTGRES_USER=corebank -e POSTGRES_PASSWORD=ci_only_password -e POSTGRES_DB=corebank \
+            postgres:16-alpine
+          for i in $(seq 1 30); do docker exec pg pg_isready -U corebank -d corebank && break; sleep 1; done
+          docker run -d --name api --network ci-net -p 8000:8000 \
+            -e DATABASE_URL=postgresql+psycopg://corebank:ci_only_password@pg:5432/corebank \
+            corebank-ledger:ci
+          for i in $(seq 1 30); do curl -fsS http://localhost:8000/health/live && break; sleep 1; done
+          curl -fsS http://localhost:8000/health/live
+          docker logs api
