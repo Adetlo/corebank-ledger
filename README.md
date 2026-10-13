@@ -12,7 +12,12 @@ controls rather than just the happy path.
 > using synthetic data and generic banking concepts. It is not affiliated
 > with, derived from, or representative of any production banking system.
 
-**Core strengths**
+[![CI](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
+**What this demonstrates**
 
 * Double-entry integrity: every posted entry satisfies `SUM(debits) == SUM(credits)`
 * Idempotent processing: persistent `Idempotency-Key` handling, safe under concurrent retries
@@ -23,11 +28,6 @@ controls rather than just the happy path.
 * Concurrency-aware processing: ordered row locks, optimistic versioning, race tests
 * PostgreSQL safeguards: constraints and deferred triggers reinforce the domain rules
 * Rigorous automated testing: unit, integration on real PostgreSQL, property-based and API suites
-
-[![CI](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml)
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
-![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -50,7 +50,8 @@ controls rather than just the happy path.
 15. [Design decisions](#15-design-decisions)
 16. [Limitations](#16-limitations)
 17. [Roadmap](#17-roadmap)
-18. [Disclaimer](#18-disclaimer)
+18. [Related portfolio projects](#18-related-portfolio-projects)
+19. [Disclaimer](#19-disclaimer)
 
 ---
 
@@ -477,7 +478,21 @@ and does not claim to be.
 * Pending/authorised holds and value-dated availability.
 * Statement and posting-export endpoints.
 
-## 18. Disclaimer
+## 18. Related portfolio projects
+
+CoreBank Ledger is the first of three independently runnable projects that together
+sketch a miniature banking technology estate: the ledger records transactions, the
+pipeline curates them, the ML service scores them.
+
+| Project | Role in the portfolio | Relationship to this repository |
+| --- | --- | --- |
+| [txn-data-pipeline](https://github.com/Adetlo/txn-data-pipeline) | Data quality, reconciliation and lineage for transaction exports | Downstream consumer: ships an optional adapter for exports shaped like this ledger's demo (`--adapter corebank-ledger`) |
+| [fraud-detection-ml](https://github.com/Adetlo/fraud-detection-ml) | Fraud risk scoring, model governance and monitored inference | Two steps downstream: scores curated transactions for fraud risk and returns decision-support labels |
+
+The integration is conceptual, not live: each repository defines its own contract and
+sample data and runs on its own. Overview on the [GitHub profile](https://github.com/Adetlo).
+
+## 19. Disclaimer
 
 This project is an independent educational implementation using synthetic
 data. It is not affiliated with, derived from, or representative of any
