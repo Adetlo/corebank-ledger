@@ -1,0 +1,10 @@
+{
+  "payment_id": "PMT-2026-000123",
+  "end_to_end_id": "E2E-INV-55821",
+  "debtor_account": "<customer-a-account-id>",
+  "creditor_account": "<customer-b-account-id>",
+  "amount": "12.50",
+  "currency": "GBP",
+  "requested_execution_date": "2026-10-14",
+  "remittance_information": "Invoice 55821"
+}

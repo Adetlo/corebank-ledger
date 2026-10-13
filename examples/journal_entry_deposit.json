@@ -1,0 +1,9 @@
+{
+  "reference": "DEP-DEMO-0001",
+  "description": "Synthetic deposit",
+  "booking_date": "2026-10-13",
+  "postings": [
+    {"account_id": "<settlement-asset-account-id>", "direction": "DEBIT", "amount": "1000.00", "currency": "GBP"},
+    {"account_id": "<customer-liability-account-id>", "direction": "CREDIT", "amount": "1000.00", "currency": "GBP"}
+  ]
+}
