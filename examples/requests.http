@@ -1,0 +1,66 @@
+### Variables (REST Client / IntelliJ HTTP)
+@base = http://localhost:8000
+@settlement = <settlement-asset-account-id>
+@customerA = <customer-a-account-id>
+@customerB = <customer-b-account-id>
+@feeIncome = <fee-income-account-id>
+
+### Liveness / readiness
+GET {{base}}/health/ready
+
+### Create a settlement asset account
+POST {{base}}/api/v1/accounts
+Content-Type: application/json
+
+{"account_name": "Cash / Settlement GBP", "account_type": "ASSET", "currency": "GBP"}
+
+### Create a customer liability account
+POST {{base}}/api/v1/accounts
+Content-Type: application/json
+
+{"account_name": "Synthetic Customer A", "account_type": "LIABILITY", "currency": "GBP"}
+
+### Fund the customer (balanced journal entry)
+POST {{base}}/api/v1/journal-entries
+Content-Type: application/json
+Idempotency-Key: dep-demo-0001
+
+{
+  "reference": "DEP-DEMO-0001",
+  "description": "Synthetic deposit",
+  "booking_date": "2026-10-13",
+  "postings": [
+    {"account_id": "{{settlement}}", "direction": "DEBIT", "amount": "1000.00", "currency": "GBP"},
+    {"account_id": "{{customerA}}", "direction": "CREDIT", "amount": "1000.00", "currency": "GBP"}
+  ]
+}
+
+### Transfer (retry-safe thanks to the Idempotency-Key)
+POST {{base}}/api/v1/transfers
+Content-Type: application/json
+Idempotency-Key: trf-demo-0001
+
+{
+  "source_account_id": "{{customerA}}",
+  "destination_account_id": "{{customerB}}",
+  "amount": "250.00",
+  "currency": "GBP",
+  "reference": "TRF-DEMO-0001",
+  "value_date": "2026-10-13"
+}
+
+### Balance
+GET {{base}}/api/v1/accounts/{{customerA}}/balance
+
+### Trial balance
+GET {{base}}/api/v1/reconciliation/trial-balance?currency=GBP
+
+### Search entries touching customer A
+GET {{base}}/api/v1/journal-entries?account_id={{customerA}}&limit=20
+
+### Reverse an entry
+POST {{base}}/api/v1/journal-entries/<journal-id>/reverse
+Content-Type: application/json
+Idempotency-Key: rev-demo-0001
+
+{"reason": "Fee charged in error"}

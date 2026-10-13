@@ -1,0 +1,9 @@
+{
+  "reference": "BAD-DEMO-0001",
+  "description": "Must be rejected: 999.99 debit vs 1000.00 credit",
+  "booking_date": "2026-10-13",
+  "postings": [
+    {"account_id": "<settlement-asset-account-id>", "direction": "DEBIT", "amount": "999.99", "currency": "GBP"},
+    {"account_id": "<customer-liability-account-id>", "direction": "CREDIT", "amount": "1000.00", "currency": "GBP"}
+  ]
+}
