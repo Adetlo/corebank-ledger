@@ -12,16 +12,22 @@ controls rather than just the happy path.
 > using synthetic data and generic banking concepts. It is not affiliated
 > with, derived from, or representative of any production banking system.
 
+[![CI](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-336791)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 **What this demonstrates**
 
 * Double-entry integrity: every posted entry satisfies `SUM(debits) == SUM(credits)`
 * Idempotent processing: persistent `Idempotency-Key` handling, safe under concurrent retries
 * Atomic transactions: journal, postings, audit and idempotency rows commit together or not at all
-* Immutable postings: no updates or deletes once posted
+* Immutable postings: no updates or deletes once posted, enforced down to database triggers
 * Reversals: corrections are new, linked entries; history is never rewritten
 * Reconciliation: trial balance and ledger-wide integrity check derived from postings
 * Concurrency-aware processing: ordered row locks, optimistic versioning, race tests
-* Automated testing: unit, integration on real PostgreSQL, property-based
+* PostgreSQL safeguards: constraints and deferred triggers reinforce the domain rules
+* Rigorous automated testing: unit, integration on real PostgreSQL, property-based and API suites
 
 ---
 
@@ -38,10 +44,14 @@ controls rather than just the happy path.
 9. [Quick start](#9-quick-start)
 10. [Docker quick start](#10-docker-quick-start)
 11. [API examples](#11-api-examples)
-12. [Testing](#12-testing)
-13. [Design decisions](#13-design-decisions)
-14. [Limitations](#14-limitations)
-15. [Disclaimer](#15-disclaimer)
+12. [Demo scenario](#12-demo-scenario)
+13. [Testing](#13-testing)
+14. [Security](#14-security)
+15. [Design decisions](#15-design-decisions)
+16. [Limitations](#16-limitations)
+17. [Roadmap](#17-roadmap)
+18. [Related portfolio projects](#18-related-portfolio-projects)
+19. [Disclaimer](#19-disclaimer)
 
 ---
 
@@ -160,10 +170,10 @@ Documented with enforcement points and proving tests in
 |-----------------|------------------------------------------------------------|
 | Language        | Python 3.12                                                |
 | API             | FastAPI, Pydantic v2                                       |
-| Persistence     | SQLAlchemy 2.x, PostgreSQL 16, psycopg 3                   |
+| Persistence     | SQLAlchemy 2.x, Alembic, PostgreSQL 16, psycopg 3          |
 | Testing         | pytest, Hypothesis, FastAPI TestClient, embedded PostgreSQL (`pgserver`) |
 | Quality         | ruff, mypy (strict), bandit, pip-audit                     |
-| Packaging       | uv + `pyproject.toml`                                      |
+| Packaging       | uv + `pyproject.toml` + `uv.lock`                          |
 | Containers      | Docker multi-stage image, Docker Compose                   |
 | CI              | GitHub Actions with a PostgreSQL service container         |
 
@@ -184,20 +194,25 @@ corebank-ledger/
 │   ├── config.py             # environment configuration
 │   ├── logging.py            # structured JSON logging with correlation ids
 │   └── main.py               # ASGI entry point
+├── migrations/               # Alembic schema + invariant triggers
 ├── tests/
 │   ├── unit/                 # domain and config tests (no database)
-│   ├── integration/          # services against PostgreSQL: atomicity, locks, races
-│   └── property/             # Hypothesis properties: balancing, reversal, idempotency
-├── examples/                 # request bodies
-├── docs/                     # ARCHITECTURE, LEDGER_INVARIANTS, DATA_MODEL, OUTBOX
+│   ├── integration/          # services against PostgreSQL: atomicity, locks, triggers, races
+│   ├── property/             # Hypothesis properties: balancing, reversal, idempotency
+│   └── api/                  # HTTP contract tests
+├── scripts/                  # seed_demo.py, demo.py
+├── examples/                 # request bodies and an .http file
+├── docs/                     # ARCHITECTURE, LEDGER_INVARIANTS, API, SECURITY, DATA_MODEL, OUTBOX, ADR/
+├── docker/entrypoint.sh      # runs migrations then the server
 ├── .github/workflows/ci.yml  # lint, types, tests + coverage, audits, image build
-├── Dockerfile · docker-compose.yml · pyproject.toml
-├── .env.example · .gitignore · LICENSE
+├── Dockerfile · docker-compose.yml · pyproject.toml · uv.lock · alembic.ini
+├── .env.example · .gitignore · LICENSE · SECURITY.md · CONTRIBUTING.md
 ```
 
 ## 8. Data model
 
-Five tables, UUID keys and constraints that mirror the domain rules. See
+Five tables, UUID keys, constraints that mirror the domain rules, and three
+triggers that make posted rows immutable and verify balance at commit. See
 [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ```mermaid
@@ -224,10 +239,13 @@ you) and a PostgreSQL 16 instance for running the API. **Tests need nothing
 extra**: they start an embedded PostgreSQL automatically.
 
 ```bash
+git clone https://github.com/Adetlo/corebank-ledger.git
+cd corebank-ledger
 uv sync                                  # dependencies + dev tools
 uv run pytest                            # full suite against embedded PostgreSQL
 
 cp .env.example .env                     # point DATABASE_URL at your PostgreSQL
+uv run alembic upgrade head              # create schema + triggers
 uv run uvicorn corebank.main:app --reload
 open http://127.0.0.1:8000/docs
 ```
@@ -246,22 +264,24 @@ uv run bandit -c pyproject.toml -r src
 ```bash
 docker compose up --build            # API on http://localhost:8000, PostgreSQL on 5432
 curl localhost:8000/health/ready
+uv run python scripts/demo.py        # end-to-end synthetic demonstration
 docker compose down -v               # stop and remove the volume
 ```
 
 The image is a multi-stage build (uv-resolved dependencies, slim runtime,
-non-root user, health check).
+non-root user, health check). The entrypoint applies Alembic migrations
+before starting uvicorn; set `RUN_MIGRATIONS=false` to skip.
 
 ## 11. API examples
 
-Interactive documentation at `/docs` and `/redoc`. Example request bodies live
-in [`examples/`](examples/).
+Full reference with every endpoint, error code and sample payload in
+[`docs/API.md`](docs/API.md). Interactive documentation at `/docs` and `/redoc`.
 
 Create an account:
 
 ```bash
 curl -s -X POST localhost:8000/api/v1/accounts -H 'Content-Type: application/json' \
-  -d @examples/create_account.json
+  -d '{"account_name": "Synthetic Customer Current Account", "account_type": "LIABILITY", "currency": "GBP"}'
 ```
 
 Post a balanced journal entry (the `Idempotency-Key` makes retries safe):
@@ -272,7 +292,7 @@ curl -s -X POST localhost:8000/api/v1/journal-entries \
   -d '{
     "reference": "DEP-DEMO-0001",
     "description": "Synthetic deposit",
-    "booking_date": "2026-03-29",
+    "booking_date": "2026-10-13",
     "postings": [
       {"account_id": "<settlement-asset-id>",    "direction": "DEBIT",  "amount": "1000.00", "currency": "GBP"},
       {"account_id": "<customer-liability-id>",  "direction": "CREDIT", "amount": "1000.00", "currency": "GBP"}
@@ -280,19 +300,99 @@ curl -s -X POST localhost:8000/api/v1/journal-entries \
   }'
 ```
 
-An unbalanced entry (`999.99` vs `1000.00`) is rejected with
-`422 UNBALANCED_JOURNAL`. Transfers (`POST /api/v1/transfers`), balances
-(`GET /api/v1/accounts/{id}/balance`), the trial balance
-(`GET /api/v1/reconciliation/trial-balance?currency=GBP`) and reversals
-(`POST /api/v1/journal-entries/{id}/reverse`) follow the same envelope.
+An unbalanced entry (`999.99` vs `1000.00`) is rejected:
 
-## 12. Testing
+```json
+{"error": {"code": "UNBALANCED_JOURNAL", "message": "Journal entry debits and credits must balance.",
+           "correlation_id": "…", "details": {"difference": "-0.01", "total_debits": "999.99", "total_credits": "1000.00", "currency": "GBP"}}}
+```
+
+Transfer, balance and trial balance:
+
+```bash
+curl -s -X POST localhost:8000/api/v1/transfers \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: trf-demo-0001' \
+  -d '{"source_account_id": "<customer-a>", "destination_account_id": "<customer-b>",
+       "amount": "250.00", "currency": "GBP", "reference": "TRF-DEMO-0001", "value_date": "2026-10-13"}'
+
+curl -s localhost:8000/api/v1/accounts/<customer-a>/balance
+curl -s 'localhost:8000/api/v1/reconciliation/trial-balance?currency=GBP'
+```
+
+```json
+{"currency": "GBP", "as_of_date": null, "accounts": [...],
+ "total_debits": "1255.00", "total_credits": "1255.00", "difference": "0.00", "balanced": true}
+```
+
+Reverse an entry (original stays immutable, gets `status=REVERSED` and `reversed_by`):
+
+```bash
+curl -s -X POST localhost:8000/api/v1/journal-entries/<id>/reverse \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: rev-demo-0001' -d '{"reason": "Fee waived"}'
+```
+
+## 12. Demo scenario
+
+### Accounting model used by the demo
+
+* Customer deposit accounts are **liabilities of the bank**: the balance is
+  what the bank owes the customer. Crediting a customer account increases the
+  bank's liability (the customer has more); debiting it decreases it.
+* The settlement account is a bank **asset** (cash the bank holds). Assets are
+  debit-normal: debits increase them.
+* **Initial funding** of a customer is therefore `DEBIT settlement asset /
+  CREDIT customer liability`: the bank holds more cash and owes more.
+* A **transfer** between two customer accounts is `DEBIT sender liability /
+  CREDIT receiver liability`: the bank owes the sender less and the receiver
+  more; total liabilities and total assets are unchanged.
+* A **fee** is `DEBIT customer liability / CREDIT fee income`: the customer's
+  claim falls and the bank recognises income.
+* A **reversal** repeats the original legs with directions swapped, so the net
+  effect of entry plus reversal is zero while both remain in the history.
+
+### Steps
+
+`scripts/demo.py` runs the following against a live API and asserts the
+ledger stays balanced throughout:
+
+1. Seed synthetic accounts (Cash / Settlement GBP, Synthetic Customer A and B, Fee Income, Operating Expense, Suspense Account).
+2. Fund Customer A: debit settlement asset, credit customer liability (GBP 1000.00).
+3. Prove an unbalanced entry is rejected (`422 UNBALANCED_JOURNAL`).
+4. Transfer GBP 250.00 from Customer A to Customer B, replay it with the same key (no double posting), and show the conflict on a changed payload.
+5. Charge a GBP 5.00 synthetic service fee.
+6. Print balances and the trial balance.
+7. Reverse the fee; show the second reversal attempt is refused; print the audit trail.
+8. Print final balances, trial balance and ledger check.
+
+Final trial balance from a run (`uv run python scripts/demo.py` against `docker compose up`):
+
+```
+=== 8. Final balances and trial balance ===
+  Cash / Settlement GBP         1000.00 GBP   (dr 1000.00, cr 0.00)
+  Synthetic Customer A           750.00 GBP   (dr 255.00, cr 1005.00)
+  Synthetic Customer B           250.00 GBP   (dr 0.00, cr 250.00)
+  Fee Income                       0.00 GBP   (dr 5.00, cr 5.00)
+  account                  type            debits      credits          net
+  Cash / Settlement GBP    ASSET          1000.00         0.00      1000.00
+  Operating Expense        EXPENSE           0.00         0.00         0.00
+  Fee Income               INCOME            5.00         5.00         0.00
+  Synthetic Customer A     LIABILITY       255.00      1005.00       750.00
+  Suspense Account         LIABILITY         0.00         0.00         0.00
+  Synthetic Customer B     LIABILITY         0.00       250.00       250.00
+  TOTAL                                   1260.00      1260.00
+  difference=0.00 balanced=True
+  ledger-check balanced=True currencies=['GBP']
+
+Demo complete: the ledger remained balanced throughout.
+```
+
+## 13. Testing
 
 The strategy is to test each ledger control at the layer that owns it, and
 to test the database-backed controls against a **real PostgreSQL** so that
-row locks and unique-constraint races behave exactly as in production.
-Locally an embedded PostgreSQL starts automatically; CI uses a service
-container.
+row locks, deferred constraint triggers and unique-constraint races behave
+exactly as in production. Locally an embedded PostgreSQL starts automatically;
+CI uses a service container.
 
 ```bash
 uv run pytest                 # whole suite, a few seconds
@@ -303,10 +403,36 @@ uv run pytest --cov           # coverage report (CI enforces a floor of 85%)
 | Suite               | Highlights                                                                                  |
 |---------------------|---------------------------------------------------------------------------------------------|
 | `tests/unit`        | Money precision and float rejection, normal-balance math, balancing rule, immutability, reversal construction, transfer translation, config masking |
-| `tests/integration` | Rollback after a simulated failure mid-transaction, idempotency replay/conflict and an 8-thread same-key race, 12 racing transfers never overdrawing, opposite-direction transfers without deadlock, reconciliation |
+| `tests/integration` | Rollback after a simulated failure mid-transaction, DB triggers rejecting tampering and unbalanced raw rows, idempotency replay/conflict and an 8-thread same-key race, 12 racing transfers never overdrawing, opposite-direction transfers without deadlock, reconciliation |
 | `tests/property`    | Hypothesis: every generated balanced entry posts balanced and every perturbation is rejected; transfer + reversal restores balances despite unrelated activity; replays never increase the posting count |
+| `tests/api`         | Status codes, stable error envelope and codes, pagination, filters, idempotency headers, request-size limit, correlation ids, health probes, masked 500/503 |
 
-## 13. Design decisions
+The concurrency and idempotency tests are the ones worth reading first:
+they start real threads against one account and assert that exactly the
+fundable transfers succeed and that a shared idempotency key posts once.
+
+## 14. Security
+
+Authentication is deliberately out of scope for v1; the service is designed
+to sit behind an authenticating gateway, and
+[`docs/SECURITY.md`](docs/SECURITY.md) describes how OAuth2/OIDC (for example
+Microsoft Entra ID) would be integrated. What *is* implemented: strict input
+validation, request-size limits, ORM-only data access, masked secrets, no
+body logging, stable non-leaking errors, DB-level tamper protection, a
+non-root container, and dependency/static security audits in CI. See
+[`SECURITY.md`](SECURITY.md) for the reporting policy.
+
+## 15. Design decisions
+
+Architecture Decision Records in [`docs/ADR/`](docs/ADR):
+
+* [0001 Use Decimal for money](docs/ADR/0001-use-decimal-for-money.md)
+* [0002 Postings are immutable](docs/ADR/0002-postings-are-immutable.md)
+* [0003 Ledger as source of truth](docs/ADR/0003-ledger-as-source-of-truth.md)
+* [0004 Idempotency persistence](docs/ADR/0004-idempotency-persistence.md)
+* [0005 PostgreSQL transaction boundaries](docs/ADR/0005-postgresql-transaction-boundaries.md)
+
+Other notable choices:
 
 * **Transfers require accounts with the same normal balance.** "A→B" means A
   decreases and B increases; mixed types cannot balance as two legs, so a
@@ -318,14 +444,15 @@ uv run pytest --cov           # coverage report (CI enforces a floor of 85%)
 * **In-process domain events** with a documented
   [transactional outbox](docs/OUTBOX.md) path instead of a broker for show.
 
-## 14. Limitations
+## 16. Limitations
 
 These are conscious scope decisions for an educational v1, not oversights.
 The project is **not** production-ready for a regulated banking deployment
 and does not claim to be.
 
 * **Authentication and authorisation are intentionally out of scope.** The
-  service is designed to sit behind an authenticating gateway.
+  service is designed to sit behind an authenticating gateway; the OAuth2/OIDC
+  integration path is documented in `docs/SECURITY.md`.
 * **Single PostgreSQL node.** No sharding, read replicas or multi-region
   consistency. Hot accounts serialise on row locks, so per-account throughput
   is bounded by lock hold time.
@@ -336,10 +463,36 @@ and does not claim to be.
 * **No idempotency expiry policy.** Records are kept indefinitely; a retention
   job is documented, not implemented.
 * No FX, interest, pricing engine, holds/authorisations or statement generation.
+* `PENDING`/`FAILED` journal statuses exist in the model but every API path
+  posts synchronously, so they are not reachable through the API.
 * The ISO 20022-inspired adapter is a teaching simplification, not a
   standards implementation.
 
-## 15. Disclaimer
+## 17. Roadmap
+
+* OAuth2/OIDC authentication with scoped permissions.
+* Balance snapshot projection with reconciliation job.
+* Transactional outbox + relay (Kafka or cloud queue).
+* Idempotency record retention and metrics (Prometheus/OpenTelemetry).
+* Multi-currency entries with FX position accounts.
+* Pending/authorised holds and value-dated availability.
+* Statement and posting-export endpoints.
+
+## 18. Related portfolio projects
+
+CoreBank Ledger is the first of three independently runnable projects that together
+sketch a miniature banking technology estate: the ledger records transactions, the
+pipeline curates them, the ML service scores them.
+
+| Project | Role in the portfolio | Relationship to this repository |
+| --- | --- | --- |
+| [txn-data-pipeline](https://github.com/Adetlo/txn-data-pipeline) | Data quality, reconciliation and lineage for transaction exports | Downstream consumer: ships an optional adapter for exports shaped like this ledger's demo (`--adapter corebank-ledger`) |
+| [fraud-detection-ml](https://github.com/Adetlo/fraud-detection-ml) | Fraud risk scoring, model governance and monitored inference | Two steps downstream: scores curated transactions for fraud risk and returns decision-support labels |
+
+The integration is conceptual, not live: each repository defines its own contract and
+sample data and runs on its own. Overview on the [GitHub profile](https://github.com/Adetlo).
+
+## 19. Disclaimer
 
 This project is an independent educational implementation using synthetic
 data. It is not affiliated with, derived from, or representative of any
