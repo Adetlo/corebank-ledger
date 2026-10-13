@@ -10,12 +10,12 @@ from corebank.logging import ConsoleFormatter, JsonFormatter, configure_logging,
 
 def test_settings_safe_summary_masks_credentials() -> None:
     settings = Settings(
-        database_url="postgresql+psycopg://user:s3cret@db.internal:5432/ledger",  # type: ignore[arg-type]
+        database_url="postgresql+psycopg://user:s3cret@db.example.com:5432/ledger",  # type: ignore[arg-type]
         log_level="debug",
     )
     summary = settings.safe_summary()
     assert "s3cret" not in json.dumps(summary)
-    assert summary["database"] == "postgresql+psycopg://db.internal/ledger"
+    assert summary["database"] == "postgresql+psycopg://db.example.com/ledger"
     assert settings.log_level == "DEBUG"
     assert "s3cret" not in repr(settings)
 

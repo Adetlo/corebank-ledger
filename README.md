@@ -1,17 +1,28 @@
 # CoreBank Ledger
 
-A production-style educational double-entry ledger service for exploring the
-engineering principles behind financial transaction systems.
+CoreBank Ledger is a production-style educational double-entry ledger service
+demonstrating the engineering controls behind financial transaction systems.
 
-Built with Python, FastAPI and PostgreSQL, the project focuses on accounting
-integrity, idempotent processing, transaction atomicity, immutable postings,
-reconciliation and rigorous automated testing.
+Built with Python 3.12, FastAPI and PostgreSQL, it records every movement of
+value as a balanced journal entry and derives all balances from those entries.
+The code is small enough to read in an afternoon and the test suite proves the
+controls rather than just the happy path.
 
-**This project uses synthetic data and generic banking concepts only.**
+> **Disclaimer.** This project is an independent educational implementation
+> using synthetic data and generic banking concepts. It is not affiliated
+> with, derived from, or representative of any production banking system.
 
-> This project is an independent educational implementation using synthetic
-> data. It is not affiliated with, derived from, or representative of any
-> production banking system.
+**Core strengths**
+
+* Double-entry integrity: every posted entry satisfies `SUM(debits) == SUM(credits)`
+* Idempotent processing: persistent `Idempotency-Key` handling, safe under concurrent retries
+* Atomic transactions: journal, postings, audit and idempotency rows commit together or not at all
+* Immutable postings: no updates or deletes once posted, enforced down to database triggers
+* Reversals: corrections are new, linked entries; history is never rewritten
+* Reconciliation: trial balance and ledger-wide integrity check derived from postings
+* Concurrency-aware processing: ordered row locks, optimistic versioning, race tests
+* PostgreSQL safeguards: constraints and deferred triggers reinforce the domain rules
+* Rigorous automated testing: unit, integration on real PostgreSQL, property-based and API suites
 
 [![CI](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Adetlo/corebank-ledger/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
@@ -321,6 +332,25 @@ curl -s -X POST localhost:8000/api/v1/journal-entries/<id>/reverse \
 
 ## 12. Demo scenario
 
+### Accounting model used by the demo
+
+* Customer deposit accounts are **liabilities of the bank**: the balance is
+  what the bank owes the customer. Crediting a customer account increases the
+  bank's liability (the customer has more); debiting it decreases it.
+* The settlement account is a bank **asset** (cash the bank holds). Assets are
+  debit-normal: debits increase them.
+* **Initial funding** of a customer is therefore `DEBIT settlement asset /
+  CREDIT customer liability`: the bank holds more cash and owes more.
+* A **transfer** between two customer accounts is `DEBIT sender liability /
+  CREDIT receiver liability`: the bank owes the sender less and the receiver
+  more; total liabilities and total assets are unchanged.
+* A **fee** is `DEBIT customer liability / CREDIT fee income`: the customer's
+  claim falls and the bank recognises income.
+* A **reversal** repeats the original legs with directions swapped, so the net
+  effect of entry plus reversal is zero while both remain in the history.
+
+### Steps
+
 `scripts/demo.py` runs the following against a live API and asserts the
 ledger stays balanced throughout:
 
@@ -357,9 +387,16 @@ Demo complete: the ledger remained balanced throughout.
 
 ## 13. Testing
 
+The strategy is to test each ledger control at the layer that owns it, and
+to test the database-backed controls against a **real PostgreSQL** so that
+row locks, deferred constraint triggers and unique-constraint races behave
+exactly as in production. Locally an embedded PostgreSQL starts automatically;
+CI uses a service container.
+
 ```bash
-uv run pytest                 # ~170 tests in a few seconds
-uv run pytest --cov           # coverage report (CI fails below 85%)
+uv run pytest                 # whole suite, a few seconds
+uv run pytest tests/unit      # pure domain tests, no database
+uv run pytest --cov           # coverage report (CI enforces a floor of 85%)
 ```
 
 | Suite               | Highlights                                                                                  |
@@ -369,8 +406,9 @@ uv run pytest --cov           # coverage report (CI fails below 85%)
 | `tests/property`    | Hypothesis: every generated balanced entry posts balanced and every perturbation is rejected; transfer + reversal restores balances despite unrelated activity; replays never increase the posting count |
 | `tests/api`         | Status codes, stable error envelope and codes, pagination, filters, idempotency headers, request-size limit, correlation ids, health probes, masked 500/503 |
 
-All database-backed tests run against **real PostgreSQL** (embedded locally,
-service container in CI) so locks and triggers are exercised for real.
+The concurrency and idempotency tests are the ones worth reading first:
+they start real threads against one account and assert that exactly the
+fundable transfers succeed and that a shared idempotency key posts once.
 
 ## 14. Security
 
@@ -407,14 +445,23 @@ Other notable choices:
 
 ## 16. Limitations
 
-Stated plainly:
+These are conscious scope decisions for an educational v1, not oversights.
+The project is **not** production-ready for a regulated banking deployment
+and does not claim to be.
 
-* No authentication or authorisation; all endpoints are open (v1 scope).
-* Single PostgreSQL node; no sharding, read replicas or multi-region story.
-* Hot accounts serialise on row locks; throughput per account is bounded.
-* Balance queries aggregate postings on every call; no snapshot projection yet.
-* Idempotency records are not expired automatically.
-* No FX, interest, fees engine, holds/authorisations or statement generation.
+* **Authentication and authorisation are intentionally out of scope.** The
+  service is designed to sit behind an authenticating gateway; the OAuth2/OIDC
+  integration path is documented in `docs/SECURITY.md`.
+* **Single PostgreSQL node.** No sharding, read replicas or multi-region
+  consistency. Hot accounts serialise on row locks, so per-account throughput
+  is bounded by lock hold time.
+* **No distributed event platform.** Domain events are dispatched in-process;
+  the transactional outbox design in `docs/OUTBOX.md` is the documented next step.
+* **No balance snapshot optimisation.** Balances are aggregated from postings on
+  every call, which is correct by construction but grows with volume.
+* **No idempotency expiry policy.** Records are kept indefinitely; a retention
+  job is documented, not implemented.
+* No FX, interest, pricing engine, holds/authorisations or statement generation.
 * `PENDING`/`FAILED` journal statuses exist in the model but every API path
   posts synchronously, so they are not reachable through the API.
 * The ISO 20022-inspired adapter is a teaching simplification, not a

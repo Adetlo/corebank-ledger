@@ -90,7 +90,7 @@ sequenceDiagram
     S->>P: BEGIN
     S->>P: SELECT idempotency record
     alt key seen with same payload
-        S->>P: INSERT audit IDEMPOTENT_REPLAY; COMMIT
+        S->>P: INSERT audit IDEMPOTENT_REPLAY, then COMMIT
         S-->>A: original journal (replayed)
         A-->>C: 200 + Idempotent-Replayed: true
     else new request
