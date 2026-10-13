@@ -1,14 +1,14 @@
 [project]
 name = "corebank-ledger"
 version = "0.1.0"
-description = "Educational double-entry ledger service demonstrating financial transaction integrity, idempotency and reconciliation."
+description = "Production-style educational double-entry ledger service demonstrating financial transaction integrity, idempotency, reconciliation and secure API engineering."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
 authors = [{ name = "Adetlo" }]
 keywords = ["ledger", "double-entry", "fintech", "banking", "fastapi", "postgresql"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Framework :: FastAPI",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
@@ -30,6 +30,7 @@ dependencies = [
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
+  "httpx2>=2.0",
   "hypothesis>=6.100",
   "ruff>=0.6",
   "mypy>=1.11",
@@ -51,7 +52,7 @@ package = true
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -70,6 +71,8 @@ ignore = ["RUF012"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "DTZ"]
+"scripts/**" = ["T201", "S101", "E501"]  # demo scripts: prints, asserts, long log lines
+"migrations/**" = ["I001", "E501"]  # embedded SQL/PLpgSQL
 
 [tool.ruff.format]
 quote-style = "double"

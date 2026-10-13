@@ -11,15 +11,16 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Install third-party dependencies first for layer caching.
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev --no-install-project
+    uv sync --frozen --no-dev --no-install-project
 
 # Then the project itself.
 COPY src ./src
-COPY README.md ./
+COPY migrations ./migrations
+COPY alembic.ini README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --frozen --no-dev
 
 # ---- runtime: minimal image, non-root user ----------------------------------
 FROM python:3.12-slim-bookworm AS runtime
@@ -37,6 +38,8 @@ RUN groupadd --system corebank && useradd --system --gid corebank --home /app co
 
 WORKDIR /app
 COPY --from=builder --chown=corebank:corebank /app /app
+COPY --chown=corebank:corebank docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 USER corebank
 EXPOSE 8000
@@ -44,4 +47,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
     CMD curl -fsS http://127.0.0.1:8000/health/ready || exit 1
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "corebank.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
